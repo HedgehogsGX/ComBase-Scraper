@@ -113,7 +113,33 @@ class ComBaseMainScraper:
             ]
         )
         self.logger = logging.getLogger(__name__)
-        
+
+    def clean_organism_food_duplication(self, organism_part: str, food_part: str) -> str:
+        """
+        去除organism中与food重复的部分
+
+        Args:
+            organism_part: 生物名称部分，如 "Aeromonas caviae in TSYB"
+            food_part: 食物部分，如 "in TSYB"
+
+        Returns:
+            清理后的organism部分
+        """
+        if not organism_part or not food_part:
+            return organism_part
+
+        # 将food_part转换为小写进行比较
+        food_lower = food_part.lower().strip()
+        organism_lower = organism_part.lower().strip()
+
+        # 如果organism末尾包含与food相同的内容，则去除
+        if food_lower and organism_lower.endswith(food_lower):
+            # 去除重复部分
+            cleaned_organism = organism_part[:len(organism_part) - len(food_part)].strip()
+            return cleaned_organism
+
+        return organism_part
+
     def load_progress(self) -> Dict:
         """加载进度"""
         if self.progress_file.exists():
@@ -287,14 +313,17 @@ class ComBaseMainScraper:
                         organism_part = record_titles[0].get_text(strip=True)  # Aerobic total spoilage bacteria
                         food_part = record_titles[2].get_text(strip=True) if len(record_titles) > 2 else ""  # in precooked beef
 
-                    # 构建完整的organism名称：编号 + organism + food
-                    if record_number and organism_part:
+                    # 清理organism中与food重复的部分
+                    cleaned_organism = self.clean_organism_food_duplication(organism_part, food_part)
+
+                    # 构建完整的organism名称：编号 + 清理后的organism + food
+                    if record_number and cleaned_organism:
                         if food_part:
-                            organism = f"{record_number} {organism_part} {food_part}"
+                            organism = f"{record_number} {cleaned_organism} {food_part}"
                         else:
-                            organism = f"{record_number} {organism_part}"
+                            organism = f"{record_number} {cleaned_organism}"
                     else:
-                        organism = organism_part
+                        organism = cleaned_organism
 
                     # food字段保持原来的逻辑（用于向后兼容）
                     food = food_part
