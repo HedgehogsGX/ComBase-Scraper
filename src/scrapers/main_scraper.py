@@ -211,20 +211,29 @@ class ComBaseMainScraper:
             self.logger.error(f"登录出错: {e}")
             return False
             
-    def navigate_to_search_results(self) -> bool:
+    def navigate_to_search_results(self, search_delay: int = 0) -> bool:
         """导航到搜索结果页面"""
         try:
             self.logger.info("导航到搜索结果页面")
             self.driver.get(self.search_url)
             time.sleep(5)
-            
+
             if "SearchResults.aspx" in self.driver.current_url:
                 self.logger.info("搜索结果页面加载成功")
+
+                # 如果设置了搜索延迟，等待指定时间
+                if search_delay > 0:
+                    print(f"⏱️ 等待 {search_delay} 秒后开始爬取...")
+                    for remaining in range(search_delay, 0, -1):
+                        print(f"⏳ 倒计时: {remaining} 秒", end='\r')
+                        time.sleep(1)
+                    print("✅ 等待完成，开始爬取")
+
                 return True
             else:
                 self.logger.error("搜索结果页面加载失败")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"导航失败: {e}")
             return False
@@ -410,7 +419,8 @@ class ComBaseMainScraper:
             print(f"❌ 文件 {file_number} 保存出错: {e}")
             return False
 
-    def run_main_scraping(self, username: str, password: str, start_page: int = None):
+    def run_main_scraping(self, username: str, password: str, start_page: int = None,
+                         end_page: int = None, progress_callback=None, search_delay: int = 0):
         """运行主爬取"""
         print("🚀 ComBase主爬虫启动")
         print("=" * 60)
@@ -420,13 +430,17 @@ class ComBaseMainScraper:
         print("  - 支持Ctrl+C安全中断")
         print("=" * 60)
 
-        # 确定起始页面
+        # 确定起始和结束页面
         if start_page is None:
             start_page = self.progress.get("current_page", 1)
+        if end_page is None:
+            end_page = self.total_pages
 
         print(f"📋 从第 {start_page} 页开始爬取")
-        print(f"🎯 目标: 第 {start_page} 页到第 {self.total_pages} 页")
+        print(f"🎯 目标: 第 {start_page} 页到第 {end_page} 页")
         print(f"📦 每个文件: {self.records_per_file} 条记录")
+        if search_delay > 0:
+            print(f"⏱️ 搜索延迟: {search_delay} 秒")
 
         start_time = datetime.now()
         self.progress["status"] = "running"
@@ -438,7 +452,7 @@ class ComBaseMainScraper:
             if not self.login(username, password):
                 return
 
-            if not self.navigate_to_search_results():
+            if not self.navigate_to_search_results(search_delay):
                 return
 
             # 如果不是从第1页开始，需要跳转
@@ -454,7 +468,7 @@ class ComBaseMainScraper:
 
             # 开始连续爬取
             current_page = start_page
-            while current_page <= self.total_pages:
+            while current_page <= end_page:
                 try:
                     # 解析当前页面
                     page_records = self.parse_page_data(current_page)
@@ -467,6 +481,10 @@ class ComBaseMainScraper:
 
                     # 更新当前页面
                     self.progress["current_page"] = current_page
+
+                    # 调用进度回调
+                    if progress_callback:
+                        progress_callback(current_page)
 
                     # 检查是否需要保存文件
                     if len(self.current_records) >= self.records_per_file:
@@ -492,7 +510,7 @@ class ComBaseMainScraper:
                         print("-" * 50)
 
                     # 跳转到下一页
-                    if current_page < self.total_pages:
+                    if current_page < end_page:
                         if not self.go_to_next_page():
                             print(f"❌ 第 {current_page} 页后无法继续翻页")
                             break
